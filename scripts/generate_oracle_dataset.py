@@ -2,6 +2,7 @@
 """Generate a curated Oracle SQL golden sample dataset with coverage checks."""
 from __future__ import annotations
 
+import csv
 import json
 import random
 from collections import Counter
@@ -16,6 +17,8 @@ MULTI_TARGET = 500
 RANDOM_SEED = 20251121
 OUTPUT_DATASET = Path("data/oracle_golden_sample_1000.jsonl")
 OUTPUT_SUMMARY = Path("data/oracle_golden_sample_summary.json")
+OUTPUT_SINGLE_CSV = Path("data/oracle_golden_single_turn.csv")
+OUTPUT_MULTI_CSV = Path("data/oracle_golden_multi_turn.csv")
 
 REASONING_TYPES = ["arithmetic", "temporal", "commonsense"]
 COMPLEXITY_LEVELS = ["basic", "intermediate", "advanced"]
@@ -975,6 +978,78 @@ def summarize_dataset(records: List[Dict[str, object]]) -> Dict[str, object]:
     return summary
 
 
+def write_single_csv(records: List[Dict[str, object]]) -> None:
+    OUTPUT_SINGLE_CSV.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "id",
+        "schema_key",
+        "database",
+        "complexity",
+        "reasoning",
+        "constructs",
+        "question",
+        "sql",
+        "validation_checks",
+        "validation_passed",
+    ]
+    with OUTPUT_SINGLE_CSV.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for record in records:
+            validation = record.get("validation", {})
+            writer.writerow(
+                {
+                    "id": record["id"],
+                    "schema_key": record["schema_key"],
+                    "database": record["database"],
+                    "complexity": record["complexity"],
+                    "reasoning": record["reasoning"],
+                    "constructs": "|".join(record["constructs"]),
+                    "question": record["question"],
+                    "sql": record["sql"],
+                    "validation_checks": "|".join(validation.get("checks_run", [])),
+                    "validation_passed": validation.get("checks_passed"),
+                }
+            )
+
+
+def write_multi_csv(records: List[Dict[str, object]]) -> None:
+    OUTPUT_MULTI_CSV.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "id",
+        "schema_key",
+        "database",
+        "scenario",
+        "reasoning",
+        "constructs",
+        "turn_count",
+        "turns_json",
+        "contextual_links_json",
+        "validation_checks",
+        "validation_passed",
+    ]
+    with OUTPUT_MULTI_CSV.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for record in records:
+            validation = record.get("validation", {})
+            writer.writerow(
+                {
+                    "id": record["id"],
+                    "schema_key": record["schema_key"],
+                    "database": record["database"],
+                    "scenario": record["scenario"],
+                    "reasoning": "|".join(record["reasoning"]),
+                    "constructs": "|".join(record["constructs"]),
+                    "turn_count": len(record["turns"]),
+                    "turns_json": json.dumps(record["turns"], ensure_ascii=False),
+                    "contextual_links_json": json.dumps(record["contextual_links"], ensure_ascii=False),
+                    "validation_checks": "|".join(validation.get("checks_run", [])),
+                    "validation_passed": validation.get("checks_passed"),
+                }
+            )
+
+
 def main() -> None:
     random.seed(RANDOM_SEED)
     single_records = generate_single_records()
@@ -987,6 +1062,8 @@ def main() -> None:
         for record in dataset:
             fh.write(json.dumps(record, ensure_ascii=False))
             fh.write("\n")
+    write_single_csv(single_records)
+    write_multi_csv(multi_records)
     summary = summarize_dataset(dataset)
     with OUTPUT_SUMMARY.open("w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2)
